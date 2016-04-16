@@ -52,9 +52,14 @@ db-live.class.php
 bot.json
 reference/*
 web/static/bundle.js
+web/index-down.html
+tenc
 
 # Config
-config.json
+discord-config.json
+socket-config.json
+config-dzone.json
+config-dbot.json
 
 # Visual Studio
 *.sln

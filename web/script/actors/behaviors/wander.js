@@ -7,31 +7,42 @@ module.exports = Wander;
 function Wander(actor) {
     this.actor = actor;
     this.state = 'idle';
-    this.listeners = [];
+    this.impulseCompleteBound = this.impulseComplete.bind(this);
+    this.impulseInterval = 300;
+    this.impulseBound = this.impulse.bind(this);
+    this.wait();
 }
 
+Wander.prototype.wait = function() {
+    if(!this.actor) return;
+    this.actor.tickDelay(this.impulseBound, 20 + Math.round(Math.random() * this.impulseInterval));
+};
+
 Wander.prototype.impulse = function() {
-    if(this.state != 'idle') return; // Maybe just replace this with a velocity check
-    if(!this.heading) {
-        this.heading = util.pickInObject(Geometry.DIRECTIONS);
+    if(!this.actor || this.actor.presence != 'online') return;
+    if(this.actor.destination) { // Busy
+        this.wait();
+    } else {
+        var direction = util.pickInObject(Geometry.DIRECTIONS);
+        //direction = util.pickInArray(['east','south']);
+        var moveXY = Geometry.DIRECTIONS[direction];
+        var canMove = this.actor.tryMove(moveXY.x, moveXY.y);
+        if(canMove) {
+            this.actor.destination = canMove;
+            this.actor.startMove();
+            this.actor.once('movecomplete', this.impulseCompleteBound)
+        } else {
+            this.wait();
+        }
     }
-    this.actor.velocity = {
-        x: Geometry.DIRECTIONS[this.heading].x/3, y: Geometry.DIRECTIONS[this.heading].y/3, z: 0
-    };
-    this.actor.facing = this.heading;
-    this.state = 'moving';
-    this.actor.removeAllListeners('collision',this.onCollision.bind(this)); // Clear any previous listeners
-    this.actor.once('collision', this.onCollision.bind(this));
+};
+
+Wander.prototype.impulseComplete = function() {
+    this.wait();
 };
 
 Wander.prototype.detach = function() { // Detach behavior from actor
-    this.actor.removeAllListeners('collision',this.onCollision.bind(this));
+    this.actor.removeListener('movecomplete',this.impulseCompleteBound);
+    this.actor.removeFromSchedule(this.impulseBound);
     delete this.actor;
-};
-
-Wander.prototype.onCollision = function() {
-    if(this.state == 'moving') {
-        this.state = 'idle';
-        this.heading = false;
-    }
 };

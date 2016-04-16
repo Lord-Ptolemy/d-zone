@@ -1,109 +1,53 @@
 'use strict';
 var inherits = require('inherits');
 var Entity = require('./entity.js');
-var Geometry = require('./../common/geometry.js');
 
 module.exports = WorldObject;
 inherits(WorldObject, Entity);
 
 function WorldObject(options) {
+    Entity.call(this);
     this.position = {
         x: options.position.x,
         y: options.position.y,
-        z: options.position.z
+        z: options.position.z,
+        fakeZ: 0
     };
-    this.size = {
-        x: options.size.x,
-        y: options.size.y,
-        z: options.size.z
+    this.height = options.height;
+    this.zDepth = this.calcZDepth();
+    this.pixelSize = {
+        x: options.pixelSize.x,
+        y: options.pixelSize.y,
+        z: options.pixelSize.z
     };
-    if(!options.velocity) options.velocity = { x: 0, y: 0, z: 0 };
-    this.velocity = {
-        x: options.velocity.x,
-        y: options.velocity.y,
-        z: options.velocity.z
-    };
-    this.on('update',function(interval) {
-        this.move(this.velocity);
-    });
+    this.screen = {};
+    this.updateScreen();
+    this.sprite.screen = this.screen;
+    this.sprite.position = this.position;
 }
 
-WorldObject.prototype.stopped = function() {
-    return this.velocity.x == 0 && this.velocity.y == 0 && this.velocity.z == 0;
-};
-
-WorldObject.prototype.move = function(velocity) {
-    if(velocity.x == 0 && velocity.y == 0 && velocity.z == 0) return;
-    this.position.x += velocity.x;
-    this.position.y += velocity.y;
-    this.position.z += velocity.z;
-    var blocked = false, objs = this.game.entities;
-    for(var i = 0; i < objs.length; i++) {
-        if(this === objs[i]) continue;
-        if(this.overlaps(objs[i])) {
-            this.position.x -= velocity.x;
-            this.position.y -= velocity.y;
-            this.position.z -= velocity.z;
-            this.emit('collision');
-            blocked = true;
-            break;
-        }
+WorldObject.prototype.move = function(x,y,z) {
+    var newX = this.position.x + x;
+    var newY = this.position.y + y;
+    var newZ = this.position.z + z;
+    this.game.world.moveObject(this,newX,newY,newZ);
+    this.updateScreen();
+    var newZDepth = this.calcZDepth();
+    if(newZDepth != this.zDepth) {
+        this.game.renderer.updateZBuffer(this.zDepth, this.sprite, newZDepth);
+        this.zDepth = newZDepth;
     }
-    if(blocked) this.velocity = { x: 0, y: 0, z: 0 };
 };
 
-WorldObject.prototype.toScreen = function() {
-    // Lock visual position to 2x2 grid to avoid jittery movement
-    var roundedX = Math.round(this.position.x / 2)*2;
-    var roundedY = Math.round(this.position.y / 2)*2;
-    return {
-        x: roundedX - this.size.x / 2 - roundedY - this.size.y / 2,
-        y: (roundedX - this.size.x / 2 + roundedY - this.size.y / 2) / 2 - this.position.z - this.size.z
-    };
+WorldObject.prototype.underneath = function() {
+    return this.game.world.objectAtXYZ(this.position.x,this.position.y,this.position.z+this.height);
 };
 
-WorldObject.prototype.overlaps = function(obj) {
-    return Geometry.intervalOverlaps(
-            this.position.x - this.size.x/2, this.position.x + this.size.x/2, 
-            obj.position.x - obj.size.x/2, obj.position.x + obj.size.x/2
-        ) && Geometry.intervalOverlaps(
-            this.position.y - this.size.y/2, this.position.y + this.size.y/2, 
-            obj.position.y - obj.size.y/2, obj.position.y + obj.size.y/2
-        ) && Geometry.intervalOverlaps(
-            this.position.z, this.position.z + this.size.z, 
-            obj.position.z, obj.position.z + obj.size.z
-        );
+WorldObject.prototype.calcZDepth = function() {
+    return this.position.x + this.position.y;
 };
 
-WorldObject.prototype.projectionOverlaps = function(obj) {
-    var xa = this.position.x - this.size.x/2, ya = this.position.y - this.size.y/2, za = this.position.z, 
-        xxa = xa + this.size.x, yya = ya + this.size.y, zza = za + this.size.z, 
-        xb = obj.position.x - obj.size.x/2, yb = obj.position.y - obj.size.y/2, zb = obj.position.z, 
-        xxb = xb + obj.size.x, yyb = yb + obj.size.y, zzb = zb + obj.size.z;
-    return Geometry.intervalOverlaps(xa-yya, xxa-ya, xb-yyb, xxb-yb) 
-        && Geometry.intervalOverlaps(xa-zza, xxa-za, xb-zzb, xxb-zb) 
-        && Geometry.intervalOverlaps(-yya+za, -ya+zza, -yyb+zb, -yb+zzb);
-};
-
-WorldObject.prototype.isBehind = function(obj) {
-    return this.projectionOverlaps(obj) && (
-        this.position.x + this.size.x/2 <= obj.position.x - obj.size.x/2 || 
-        this.position.y + this.size.y/2 <= obj.position.y - obj.size.y/2 || 
-        this.position.z + this.size.z <= obj.position.z
-        );
-};
-
-WorldObject.prototype.supports = function(obj) {
-    return this.position.z + this.size.z == obj.position.z &&
-        Geometry.intervalOverlaps(
-            this.position.x - this.size.x/2, this.position.x + this.size.x/2, 
-            obj.position.x - obj.size.x/2, obj.position.x + obj.size.x/2
-        ) && Geometry.intervalOverlaps(
-            this.position.y - this.size.y/2, this.position.y + this.size.y/2, 
-            obj.position.y - obj.size.y/2, obj.position.y + obj.size.y/2
-        );
-};
-
-WorldObject.prototype.getSprite = function() {
-    // Return generic sprite
+WorldObject.prototype.updateScreen = function() {
+    this.screen.x = (this.position.x - this.position.y) * 16 - this.pixelSize.x;
+    this.screen.y = (this.position.x + this.position.y) * 8 - (this.position.z + this.height) * 16;
 };

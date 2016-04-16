@@ -1,0 +1,15 @@
+{
+  "email": "test@example.com",
+  "password": "password",
+  "servers": [
+    {
+      "id": "1234567891234567",
+      "default": true,
+      "ignoreChannels": ["Members-Only","Testing"]
+    },
+    {
+      "id": "3213213213213213",
+      "password": "rosebud"
+    }
+  ]
+}
